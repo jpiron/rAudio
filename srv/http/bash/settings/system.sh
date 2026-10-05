@@ -204,6 +204,43 @@ mpdoled )
 	I2CSET=1
 	configTxt
 	;;
+nfc )
+	if [[ $ON ]]; then
+		port=$( $dirbash/nfc.py port )
+		if grep -q -E "console=(serial0|${port/\/dev\/})(,| |$)" $file_cmdline; then
+			echo "Serial port $port is used by the console in $file_cmdline."
+			exit
+# --------------------------------------------------------------------
+		fi
+		if ! systemctl -q is-active nfc && fuser -s $port &> /dev/null; then
+			echo "Serial port $port is used by another process."
+			exit
+# --------------------------------------------------------------------
+		fi
+		file_service=/etc/systemd/system/nfc.service
+		if [[ ! -e $file_service ]]; then
+			echo "\
+[Unit]
+Description=NFC reader
+After=startup.service
+
+[Service]
+ExecStart=$dirbash/nfc.py
+
+[Install]
+WantedBy=default.target" > $file_service
+			systemctl daemon-reload
+		fi
+		serviceRestartEnable
+	else
+		systemctl disable --now nfc
+	fi
+	enableFlagSet # index.php: Write NFC tag in context menus
+	config=$( grep -v ^enable_uart=1 $file_config )
+	[[ $ON ]] && config+='
+enable_uart=1' # mini UART on GPIO 14/15 if onboard bluetooth on PL011 - no effect otherwise
+	configTxt
+	;;
 ntp )
 	echo "\
 [Time]

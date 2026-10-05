@@ -45,7 +45,7 @@ hostname > $dirsystem/hostname
 netctl list | sed '/^\*/ s/^\* //' > $dirsystem/netctlprofile
 timedatectl | awk '/zone:/ {print $3}' > $dirsystem/timezone
 nfsServerActive && cp -r $dirshareddata $dir_config
-services='bluetooth camilladsp iwd localbrowser mediamtx nfs-server powerbutton shairport-sync smb snapserver spotifyd upmpdcli'
+services='bluetooth camilladsp iwd localbrowser mediamtx nfc nfs-server powerbutton shairport-sync smb snapserver spotifyd upmpdcli'
 for service in $services; do
 	systemctl -q is-active $service && enable+=" $service" || disable+=" $service"
 done

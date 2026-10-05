@@ -109,7 +109,7 @@ fi
 data+=$( dataActive bluetooth nfs-server rotaryencoder smb )
 ##########
 data+=$( dataEnabled \
-			$dirsystem ap lcdchar mpdoled powerbutton relays soundprofile vuled \
+			$dirsystem ap lcdchar mpdoled nfc powerbutton relays soundprofile vuled \
 			$dirshm relayson )
 if pgrep mkfs &> /dev/null; then
 	storage=$( getContent $dirshm/system-storage )

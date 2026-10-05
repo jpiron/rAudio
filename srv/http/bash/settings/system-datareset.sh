@@ -65,7 +65,7 @@ sed -i 's/fb1/fb0/' /etc/X11/xorg.conf.d/99-fbturbo.conf
 $dirsettings/system.sh 'hostname
 rAudio
 CMD NAME'
-systemctl -q disable bluetooth camilladsp mediamtx nfs-server powerbutton shairport-sync smb snapclient spotifyd upmpdcli
+systemctl -q disable bluetooth camilladsp mediamtx nfc nfs-server powerbutton shairport-sync smb snapclient spotifyd upmpdcli
 mv -f $dirdata/{addons,camilladsp,mpdconf} /tmp
 [[ $KEEPLIBRARY ]] && mv -f $dirdata/{mpd,playlists,webradio} /tmp
 rm -rf $dirdata $dirshareddata \

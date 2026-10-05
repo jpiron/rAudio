@@ -95,6 +95,11 @@ mpdoled )
 	SERVICE=mpd_oled
 	configText /etc/default/mpd_oled
 	;;
+nfc )
+	conf="\
+<bll># $dirbash/nfc.py port</bll>
+$( $dirbash/nfc.py port )"
+	;;
 nfsserver )
 	SERVICE=nfs-server
 	ip_client=$( ipSharedData )

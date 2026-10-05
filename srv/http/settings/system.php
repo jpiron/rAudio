@@ -176,6 +176,23 @@ $body        = [
 		, 'help'     => $helpi2s
 	]
 	, [
+		  'id'       => 'nfc'
+		, 'label'    => 'NFC Reader'
+		, 'sub'      => 'PN532'
+		, 'status'   => true
+		, 'help'     => <<< EOF
+PN532 NFC reader - place a tag to play its album, folder or saved playlist.
+ · Tags: NTAG213 / 215 / 216
+ · Write a tag: context menu of an album, a folder or a saved playlist > <c>Write NFC tag</c>
+ · Module DIP switches: HSU (UART) <c>0 0</c>
+ · Wiring:
+	<tab>VCC</tab> 3.3V - pin <c>1</c> or <c>17</c>
+	<tab>GND</tab> any ground pin
+	<tab>TXD</tab> pin <c>10</c> (GPIO 15 RXD)
+	<tab>RXD</tab> pin <c>8</c> (GPIO 14 TXD)
+EOF
+	]
+	, [
 		  'id'       => 'powerbutton'
 		, 'label'    => 'Power Button'
 		, 'sub'      => 'libgpiod'

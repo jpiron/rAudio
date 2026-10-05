@@ -10,6 +10,7 @@ import json
 import os
 import select
 import subprocess
+import sys
 import termios
 import time
 import tty
@@ -417,4 +418,7 @@ def main():
         time.sleep( INTERVAL )
 
 if __name__ == '__main__':
-    main()
+    if sys.argv[ 1: ] == [ 'port' ]: # system.sh, data-service.sh
+        print( serialPort() )
+    else:
+        main()
