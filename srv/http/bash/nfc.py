@@ -9,6 +9,7 @@
 import json
 import os
 import select
+import subprocess
 import termios
 import time
 import tty
@@ -23,7 +24,13 @@ STATUS = { # InDataExchange / InCommunicateThru error status
     , 0x29: 'Tag removed'
 }
 
-class NfcError( Exception ):
+class NfcError( Exception ):    # tag data: notify
+    pass
+
+class ReaderError( NfcError ): # PN532 not responding: reconnect
+    pass
+
+class TagError( NfcError ):    # tag communication - moved or removed: retry
     pass
 # transport ------------------------------------------------------------
 # interface for I2C / SPI later: send( frame ), read( n, deadline ) > bytes | TimeoutError, close()
@@ -90,27 +97,27 @@ class Pn532:
             self.io.read( 1, deadline ) # postamble
             return b''
 
-        if ( length + lcs ) & 0xff: raise NfcError( f'PN532 frame: bad LCS {length:#04x} {lcs:#04x}' )
+        if ( length + lcs ) & 0xff: raise ReaderError( f'PN532 frame: bad LCS {length:#04x} {lcs:#04x}' )
 
         data = self.io.read( length + 2, deadline )
         data, dcs = data[ :-2 ], data[ -2 ]
-        if ( sum( data ) + dcs ) & 0xff: raise NfcError( 'PN532 frame: bad DCS '+ data.hex( ' ' ) )
+        if ( sum( data ) + dcs ) & 0xff: raise ReaderError( 'PN532 frame: bad DCS '+ data.hex( ' ' ) )
 
-        if data == b'\x7f': raise NfcError( 'PN532 frame: syntax error' )
+        if data == b'\x7f': raise ReaderError( 'PN532 frame: syntax error' )
 
         return data
 
     def call( self, cmd, params=b'', timeout=1 ):
         self.io.send( frame( bytes( [ 0xd4, cmd ] ) + params ) )
         try:
-            if self.readFrame( 0.1 ) != b'': raise NfcError( f'PN532 {cmd:#04x}: no ACK' )
+            if self.readFrame( 0.1 ) != b'': raise ReaderError( f'PN532 {cmd:#04x}: no ACK' )
 
             data = self.readFrame( timeout )
         except TimeoutError as e:
             self.io.asleep = True # power-down or reset: wake up on next command
-            raise NfcError( f'PN532 {cmd:#04x}: no reply ({ e })' ) from None
+            raise ReaderError( f'PN532 {cmd:#04x}: no reply ({ e })' ) from None
 
-        if data[ :2 ] != bytes( [ 0xd5, cmd + 1 ] ): raise NfcError( f'PN532 {cmd:#04x}: bad reply '+ data.hex( ' ' ) )
+        if data[ :2 ] != bytes( [ 0xd5, cmd + 1 ] ): raise ReaderError( f'PN532 {cmd:#04x}: bad reply '+ data.hex( ' ' ) )
 
         self.io.asleep = False
         return data[ 2: ]
@@ -131,7 +138,7 @@ class Pn532:
     def exchange( self, tg, data ):
         reply  = self.call( 0x40, bytes( [ tg ] ) + data ) # InDataExchange - CRC added by PN532
         status = reply[ 0 ] & 0x3f
-        if status: raise NfcError( STATUS.get( status, f'Tag error {status:#04x}' ) )
+        if status: raise TagError( STATUS.get( status, f'Tag error {status:#04x}' ) )
 
         return reply[ 1: ]
 
@@ -256,3 +263,108 @@ def ndefTarget( payload ):
     if not value or not isinstance( value, str ): raise NfcError( f'Invalid rAudio data: { payload.decode( errors="replace" ) }' )
 
     return { 'type': type, key: value }
+# daemon ---------------------------------------------------------------
+DIRBASH      = '/srv/http/bash/'
+DIRPLAYLISTS = '/srv/http/data/playlists/'
+DIRSHM       = '/srv/http/data/shm/'
+INTERVAL     = 0.3 # poll
+REMOVED      = 1   # no tag for 1s = removed - tag left on reader not retriggered
+RETRY        = 3   # tag communication errors before notify
+
+def log( message ):
+    print( message, flush=True ) # journalctl -u nfc
+
+def notify( message, title='NFC' ): # common.sh notify
+    data = { 'channel': 'notify', 'data': { 'icon': 'tag', 'title': title, 'message': message, 'delay': 3000 } }
+    subprocess.run( [ DIRBASH +'status', '-P', json.dumps( data ) ] )
+
+def cmdsh( *args ): # cmd.sh "CMD\nARG\n...\nCMD KEYS"
+    subprocess.run( [ DIRBASH +'cmd.sh', '\n'.join( args ) ] )
+
+def mpc( *args ):
+    return subprocess.run( [ 'mpc', *args ], capture_output=True, text=True ).stdout.strip()
+
+def mpdPlaying():
+    for i in range( 10 ):
+        if mpc( 'status', '%state%' ) == 'playing': return True
+        
+        time.sleep( 0.5 )
+    return False
+
+def play( target ): # stop other player > random off > replace playlist > play
+    if target[ 'type' ] == 'folder':
+        path = target[ 'path' ]
+        name = os.path.basename( path )
+        if not mpc( 'ls', path ): raise NfcError( 'Not found in Library: '+ path )
+    else:
+        name = target[ 'name' ]
+        if not os.path.isfile( DIRPLAYLISTS + name +'.m3u' ): raise NfcError( 'Playlist not found: '+ name )
+    
+    with open( DIRSHM +'player' ) as f: player = f.read().strip()
+    if player != 'mpd': cmdsh( 'playerstop' )
+    if mpc( 'status', '%random%' ) == 'on': cmdsh( 'mpcoption', 'random', 'false', 'CMD OPTION TF' )
+    if target[ 'type' ] == 'folder':
+        cmdsh( 'mpcaddls', path, 'replaceplay', 'CMD DIR ACTION' )
+    else:
+        cmdsh( 'playlist', name, 'true', 'true', 'CMD NAME PLAY REPLACE' )
+    if not mpdPlaying(): raise NfcError( 'Playback failed: '+ name )
+    
+    notify( name, 'Replace Playlist and play' )
+
+def main():
+    port    = serialPort()
+    pn      = None
+    error   = ''
+    uidlast = None
+    seen    = 0
+    retry   = 0
+    while True:
+        try:
+            if not pn:
+                io = Uart( port )
+                pn = Pn532( io )
+                log( port +': '+ pn.begin() )
+                error = ''
+            target = pn.target()
+        except ( OSError, ReaderError ) as e:
+            if str( e ) != error: log( f'Reader: { e }' ) # log once until changed
+            error = str( e )
+            if pn: io.close()
+            pn = None
+            time.sleep( 5 )
+            continue
+        
+        now = time.monotonic()
+        if target:
+            tg, uid, sak = target
+            if uid != uidlast or now - seen > REMOVED:
+                log( 'Tag '+ uid.hex( ':' ) )
+                try:
+                    tag = Ntag( pn, tg, sak )
+                    play( ndefDecode( tag.readNdef() ) )
+                except TagError as e:
+                    retry += 1
+                    log( f'Tag { uid.hex( ":" ) }: { e } ({ retry }/{ RETRY })' )
+                    if retry < RETRY:
+                        time.sleep( INTERVAL )
+                        continue # not set as handled: read again
+                    
+                    notify( str( e ) )
+                except ReaderError:
+                    continue # reconnect on next target()
+                except NfcError as e:
+                    log( f'Tag { uid.hex( ":" ) }: { e }' )
+                    notify( str( e ) )
+            retry   = 0
+            uidlast = uid
+            seen    = time.monotonic() # after play: cmd.sh may take more than REMOVED
+            try:
+                pn.release( tg )
+            except NfcError:
+                pass
+        else:
+            retry = 0
+        time.sleep( INTERVAL )
+
+if __name__ == '__main__':
+    main()
