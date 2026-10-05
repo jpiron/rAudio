@@ -1278,6 +1278,7 @@ var MENU      = {
 			$menu.find( '.wrdirrename' ).toggleClass( 'hide', ! radio );
 			$menu.find( '.update, .tag' ).toggleClass( 'disabled', S.updating );
 			$menu.find( '.savedpladd' ).toggleClass( 'hide', C.playlists === 0 );
+			$menu.find( '.nfcwrite' ).toggleClass( 'hide', ! V.list.licover && ! $menu.is( '#menu-folder' ) && ! ( [ 'album', 'lsmode' ].includes( $LI.data( 'mode' ) ) && $LI.find( '.lipath' ).text() ) ); // folder only - album with path: findartist, search
 			$thumbnail = $menu.find( '.thumbnail' );
 			if ( ! V.list.licover && mode_file && ! track ) {
 				BASH( [ 'coverart', V.list.path, 'CMD DIR' ], coverart => {

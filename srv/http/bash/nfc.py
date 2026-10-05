@@ -270,12 +270,16 @@ DIRSHM       = '/srv/http/data/shm/'
 INTERVAL     = 0.3 # poll
 REMOVED      = 1   # no tag for 1s = removed - tag left on reader not retriggered
 RETRY        = 3   # tag communication errors before notify
+REQUEST      = DIRSHM +'nfcwrite' # cmd.sh nfcwrite > TYPE\nVALUE
+TIMEOUT      = 30  # write request: wait for a tag
+TITLE        = 'Write NFC Tag'
 
 def log( message ):
     print( message, flush=True ) # journalctl -u nfc
 
-def notify( message, title='NFC' ): # common.sh notify
-    data = { 'channel': 'notify', 'data': { 'icon': 'tag', 'title': title, 'message': message, 'delay': 3000 } }
+def notify( message, title='NFC', delay=3000 ): # common.sh notify - delay -1: until next notify
+    icon = delay == -1 and 'tag blink' or 'tag'
+    data = { 'channel': 'notify', 'data': { 'icon': icon, 'title': title, 'message': message, 'delay': delay } }
     subprocess.run( [ DIRBASH +'status', '-P', json.dumps( data ) ] )
 
 def cmdsh( *args ): # cmd.sh "CMD\nARG\n...\nCMD KEYS"
@@ -311,6 +315,26 @@ def play( target ): # stop other player > random off > replace playlist > play
     
     notify( name, 'Replace Playlist and play' )
 
+def requestGet(): # > None | { name, message, deadline, notified }
+    try:
+        with open( REQUEST ) as f: lines = f.read().splitlines()
+        os.remove( REQUEST )
+    except OSError:
+        return None
+    
+    if len( lines ) < 2 or lines[ 0 ] not in KEY or not lines[ 1 ]:
+        notify( 'Invalid request', TITLE )
+        return None
+    
+    type, value = lines[ :2 ]
+    log( f'Write request: { type } { value }' )
+    return {
+          'name'     : type == 'folder' and os.path.basename( value ) or value
+        , 'message'  : ndefEncode( type, value )
+        , 'deadline' : time.monotonic() + TIMEOUT
+        , 'notified' : None
+    }
+
 def main():
     port    = serialPort()
     pn      = None
@@ -318,7 +342,9 @@ def main():
     uidlast = None
     seen    = 0
     retry   = 0
+    request = None
     while True:
+        request = requestGet() or request # new request replaces pending one
         try:
             if not pn:
                 io = Uart( port )
@@ -335,9 +361,33 @@ def main():
             continue
         
         now = time.monotonic()
+        if request:
+            if now > request[ 'deadline' ]:
+                log( 'Write request: timeout' )
+                notify( 'Cancelled: no tag', TITLE )
+                request = None
+            elif request[ 'notified' ] is None or now - request[ 'notified' ] >= 5: # renotify: banner may be hidden by status push
+                notify( f'{ request[ "name" ] } - Place a tag on the reader ... { round( request[ "deadline" ] - now ) }s', TITLE, -1 )
+                request[ 'notified' ] = now
         if target:
             tg, uid, sak = target
-            if uid != uidlast or now - seen > REMOVED:
+            if request: # tag already on reader included
+                log( 'Tag '+ uid.hex( ':' ) +': write' )
+                try:
+                    tag = Ntag( pn, tg, sak )
+                    tag.writeNdef( request[ 'message' ] )
+                    notify( request[ 'name' ], 'Tag written' )
+                except TagError as e:
+                    log( f'Tag { uid.hex( ":" ) }: { e }' )
+                    time.sleep( INTERVAL )
+                    continue # retry until timeout
+                except ReaderError:
+                    continue
+                except NfcError as e:
+                    log( f'Tag { uid.hex( ":" ) }: { e }' )
+                    notify( str( e ), TITLE )
+                request = None # written tag not played
+            elif uid != uidlast or now - seen > REMOVED:
                 log( 'Tag '+ uid.hex( ':' ) )
                 try:
                     tag = Ntag( pn, tg, sak )

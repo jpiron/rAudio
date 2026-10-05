@@ -53,6 +53,7 @@ $thumbupdate = $coverart.icon(  'refresh-overlay' );
 $kid3        = file_exists( '/bin/kid3-cli' );
 $menu        = '';
 $htmlcommon  = menuCommon( 'add', 'replace' );
+$nfcwrite    = [ 'nfcwrite', 'tag', 'Write NFC tag' ];
 // file
 $html = $htmlcommon;
 $menulist = [
@@ -78,6 +79,7 @@ htmlMenu( $menulist, 'filesavedpl' );
 $html     = $htmlcommon;
 $menulist = [
 	  [ 'BKadd',       'star',            'Bookmark' ]
+	, $nfcwrite
 	, [ 'thumbnail',    $coverart,        'Folder thumbnail' ]
 	, [ 'thumbUpdate',  $thumbupdate,     'Update thumbnails' ]
 	, [ 'exclude',     'folder-forbid',   'Exclude directory' ]
@@ -104,7 +106,8 @@ htmlMenu( $menulist, 'plaction' );
 // playlist
 $html     = menuCommon( 'pladd', 'plreplace' );
 $menulist = [
-	  [ 'PLrename', 'edit',   'Rename' ]
+	  $nfcwrite
+	, [ 'PLrename', 'edit',   'Rename' ]
 	, [ 'PLdelete', 'remove', 'Delete' ]
 ];
 htmlMenu( $menulist, 'playlist' );
@@ -132,7 +135,7 @@ $menulist = [
 htmlMenu( $menulist, 'wrdir' );
 
 foreach( [ 'album', 'albumartist', 'artist', 'composer', 'conductor', 'genre', 'date' ] as $mode ) {
-	$html = menuCommon( $mode.'add', $mode.'replace' );
+	$html = menuCommon( $mode.'add', $mode.'replace' ).menuLi( $nfcwrite ); // lsmode only
 	$menu.= menuDiv( $mode, $html );
 }
 

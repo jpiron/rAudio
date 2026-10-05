@@ -168,6 +168,22 @@ var CONTEXT  = {
 			, ok      : callback
 		} );
 	}
+	, nfcwrite     : () => {
+		if ( V.library ) { // album, folder, lsmode
+			var type  = 'folder';
+			var value = V.list.path.endsWith( '.cue' ) ? COMMON.dirName( V.list.path ) : V.list.path;
+		} else {           // saved playlist
+			var type  = 'playlist';
+			var value = V.list.path;
+		}
+		BASH( [ 'nfcwrite', type, value, 'CMD TYPE VALUE' ], error => {
+			if ( error ) INFO( {
+				  icon    : 'tag'
+				, title   : 'Write NFC Tag'
+				, message : error
+			} );
+		} );
+	}
 	, playback     : {
 		  cmd     : action => BASH( [ 'mpcskip', V.list.index + 1, action, 'CMD POS ACTION' ] )
 		, current : () => CONTEXT.playback.cmd( 'stop' )

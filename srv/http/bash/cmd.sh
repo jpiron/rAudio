@@ -341,6 +341,11 @@ multiraudiolist )
 , "list"    : '$( < $dirsystem/multiraudio.json )'
 }'
 	;;
+nfcwrite )
+	! systemctl -q is-active nfc && echo 'NFC Reader is not enabled.' && exit
+# --------------------------------------------------------------------
+	printf '%s\n' "$TYPE" "$VALUE" > $dirshm/nfcwrite # nfc.py: write to next tag
+	;;
 password )
 	rm -f /boot/password
 	chpasswd <<< root:$PASSWORD
